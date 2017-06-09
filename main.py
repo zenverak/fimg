@@ -13,6 +13,13 @@ class Block(object):
     class that stores the blocks and is used to help track the block itself
     There is an intent to add more code to block eventually but right now
     it is more of a stub class.
+
+    Attributes
+        beginning_x = the first x coordinate of this block
+        end_x       = the last x coordinate of this block
+        beginning_y = the first y coordinate of this block
+        end_y       = the last y coordinate of this block
+        id_num      = currently not in use
     '''
     def __init__(self, beginning_x, end_x, beginning_y, end_y,id_num=0):
 
@@ -31,6 +38,13 @@ class Block(object):
 class Image(object):
     '''
     Class that contains the image and functions to use upon the image
+
+
+    Attributes
+        loc        = Location of image
+        block_size = tuple containing size of block
+        rand       = Controls how often a block sorts. Function pulls a random number and if it is greater than rand, some action will happen
+        rand_range = This controls how far something can be away in random actions
     '''
 
     def __init__(self, loc, block_size,rand=0.5, rand_range=0):
@@ -40,6 +54,8 @@ class Image(object):
         self.blocks = []
         self.rand = rand
         self.rand_range = rand_range
+        self.actions = ''
+        self.metrics = ''
 
         
     def save(self, other_location=''):
@@ -191,39 +207,46 @@ class Image(object):
 ###################
 
 
+class Actions(object):
+    '''
+        These are actions that can be done upon the image
+        Attribute
+            image = the image class that
+            
+    '''
 
-    def magic(self, metric, action):
-        num = len(self.blocks)
+    def magic(self,img, metric, action):
+        num = len(img.blocks)
         for block_index in range(0, num):
             r = random.uniform(0,1)
-            if r > self.rand:
-                block_1 = self.blocks[block_index]
+            if r > img.rand:
+                block_1 = img.blocks[block_index]
                 if not block_1.changed:
                     ##Find block to perform magic with
                     ## perform an action on there. Maybe its swapping, Maybe its averaging.
-                    new_index = metric(block_index)
-                    block_2 = self.blocks[new_index]
-                    [chunk_1, chunk_2] = self.get_chunks([block_1, block_2])
-                    action(block_1, block_2, chunk_1, chunk_2)
+                    new_index = metric(img, block_index)
+                    block_2 = img.blocks[new_index]
+                    [chunk_1, chunk_2] = img.get_chunks([block_1, block_2])
+                    action(img, block_1, block_2, chunk_1, chunk_2)
 
 
-    def swap_colors(self):
-        color_1 = dc(self.image[:,:,0])
-        color_2 = dc(self.image[:,:,1])
-        self.image[:,:,0] = color_2
-        self.image[:,:,1] = color_1
+    def swap_colors(self,img):
+        color_1 = dc(img.image[:,:,0])
+        color_2 = dc(img.image[:,:,1])
+        img.image[:,:,0] = color_2
+        img.image[:,:,1] = color_1
 
 
-    def swap_single_order(self):
+    def swap_single_order(self,img):
         counter = 0
         next_color = 1
-        y, x, t = self.image.shape
+        y, x, t = img.image.shape
         for i in range(0,y):
             for j in range(0,x):
-                v1 = dc(self.image[i, j, counter])
-                v2 = dc(self.image[i, j, next_color])
-                self.image[i, j, counter] = v2
-                self.image[i, j, next_color] = v1
+                v1 = dc(img.image[i, j, counter])
+                v2 = dc(img.image[i, j, next_color])
+                img.image[i, j, counter] = v2
+                img.image[i, j, next_color] = v1
                 counter = (counter + 1) % 3
                 next_color = (next_color + 1) % 3
                 
@@ -233,48 +256,52 @@ class Image(object):
 ################
 ### ACTIONS  ###
 ################
-    def average(self, b1, b2, c1, c2):
+    def average(self,img,  b1, b2, c1, c2):
         '''
         averages two blocks and set block one to that value
         '''
         average_chunk_1 = cv2.addWeighted(c1, 0.5, c2, 0.5, 0)
         b2.changed = False
-        self.assign_chunk(b1, average_chunk_1)
+        img.assign_chunk(b1, average_chunk_1)
 
 
-    def average_and_swap(self, b1, b2, c1, c2):
+    def average_and_swap(self,img, b1, b2, c1, c2):
         '''
         Averages two blocks and then swaps the averaged block with the
         non averaged block
         
     	'''
         average_chunk_1 = cv2.addWeighted(c1, 0.50, c2, 0.50, 0)
-        self.swap(b1, b2, average_chunk_1, c2)
+        img.swap(b1, b2, average_chunk_1, c2)
         
         
 #####################
 ##### METRICS #######
 #####################
-    def ssd(self, block_ind, gtlt):
+
+class Metrics(object):
+
+        
+    def ssd(self, img, block_ind, gtlt):
         '''
         uses the block index and returns the index of the most block that is
         most like it or most dislike it. There are two wrapper functions that
         call this and will either choose gt or lt
         '''
-        block = self.blocks[block_ind]
+        block = img.blocks[block_ind]
         most_like_or_dislike = 0
         if gtlt == 'gt':
             similarity = -1
         else:
             similarity = 999999
-        for i in range(len(self.blocks)):
+        for i in range(len(img.blocks)):
             if i != block_ind:
-                second_block = self.blocks[i]
+                second_block = img.blocks[i]
                 ##make sure to not switch images twice
                 ##without you might switch and switch back
                 if second_block.changed == False:
-                    chunk_1 = self.get_chunk(block)
-                    chunk_2 = self.get_chunk(second_block)
+                    chunk_1 = img.get_chunk(block)
+                    chunk_2 = img.get_chunk(second_block)
                     ssd = np.sum((chunk_1[:,:,:] - chunk_2[:,:,:])**2)
                     if gtlt == 'gt':
                         if ssd > similarity:
@@ -289,26 +316,26 @@ class Image(object):
         ##This will make sure that the second block is not used again
         ##However if you want to maybe use that block in the future
         ##Use the returned index to change set changed back to False
-        self.blocks[most_like_or_dislike].changed = True       
+        img.blocks[most_like_or_dislike].changed = True       
         return most_like_or_dislike
                     
             
-    def ssd_similar(self, block_ind):
+    def ssd_similar(self, img, block_ind):
         '''
         Takes in block index and then calls self.ssd with lt option.
         This will try to swap blocks that are most like each other hence
         we compare less than to get the smallest difference
         '''
-        return self.ssd(block_ind, 'lt')
+        return self.ssd(img, block_ind, 'lt')
 
 
-    def ssd_dissimilar(self, block_ind):
+    def ssd_dissimilar(self, img, block_ind):
         '''
         Takes in block index and then calls self.ssd with gt option.
         This will try to swap blocks that are most dissimilar each other hence
         we compare greater than to get the largest difference
         '''
-        return self.ssd(block_ind, 'gt')
+        return self.ssd(img, block_ind, 'gt')
 
 
 
@@ -320,9 +347,11 @@ if __name__ == '__main__':
     i_path = 'me.jpg'
     img1 = Image(i_path, (150, 150), .75, 20)
     img1.get_blocks()
-    metric = img1.ssd_similar
-    action = img1.average_and_swap
-    img1.magic(metric, action)
+    metrics = Metrics()
+    actions = Actions()
+    metric = metrics.ssd_similar
+    action = actions.average_and_swap
+    actions.magic(img1, metric, action)
     img1.save()
 
     
